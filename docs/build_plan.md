@@ -31,7 +31,7 @@ Source docs (in `/docs`):
 | DB | **Supabase Postgres** (Docker locally for dev) | Hosted Postgres with SQL editor + table viewer; FTS via `tsvector`, JSONB for rubrics. |
 | ORM | Drizzle | Lean, SQL-first, type-safe — good fit for connecting directly to Supabase Postgres via connection string. |
 | Auth | **Auth.js (NextAuth) with Google provider** | Idiomatic Next.js integration, easy provider swap later. Connects to our own `users` table. |
-| LLM | Anthropic Claude (Sonnet) | One provider for both rubric generation and evaluation. |
+| LLM | OpenAI (gpt-4o, structured outputs) | One provider for both rubric generation and evaluation; native `response_format: json_schema` keeps the wrapper thin. |
 | Validation | Zod | API boundaries, LLM output parsing, form input. |
 | Hosting | Vercel (app) + Supabase (DB) | Lowest-friction path for incremental shipping. |
 
@@ -61,12 +61,12 @@ Goal: sharp boundaries with one-way dependencies so any single piece can be swap
 
 | Path | Purpose |
 |---|---|
-| `app/(auth)/` | Login, OAuth callback. |
+| `app/login/` + `app/api/auth/[...nextauth]/` | Login screen plus Google OAuth callback/session endpoints. |
 | `app/assessment/new/` | Cascading wizard (function → role → subject → outcome → generate). |
 | `app/assessment/[id]/` | Question + response screen. |
 | `app/assessment/[id]/results/` | Scores + visualization. |
 | `components/ui/` | Design primitives (Button, Card, Select, Bar). Swappable. |
-| `lib/api-client/` | Typed wrappers around server actions / route handlers. |
+| `lib/api-client/` | Reserved for future typed wrappers around server actions / route handlers if client-side mutations expand. |
 
 ### Why this split survives future change
 
@@ -83,7 +83,7 @@ Each phase is independently shippable and verifiable. Don't start phase N+1 unti
 
 ### Phase 0 — Foundations (½ day)
 - Decide & document stack.
-- Init repo: Next.js + TS + Tailwind + Postgres + ORM + Auth.js + Anthropic SDK + Zod.
+- Init repo: Next.js + TS + Tailwind + Postgres + ORM + Auth.js + OpenAI SDK + Zod.
 - `.env.example`, lint, format, basic CI.
 - **Exit:** `pnpm dev` boots a hello-world page; `pnpm db:push` creates an empty DB.
 
@@ -105,14 +105,14 @@ Each phase is independently shippable and verifiable. Don't start phase N+1 unti
 - **Exit:** Click through function → role → subject → outcome; "Generate Assessment" button wired but stubbed.
 
 ### Phase 4 — User layer schema (½ day)
-- Add `assessments`, `responses`, `response_skill_scores`.
+- Add `assessments`, `assessment_skills`, `responses`, `response_skill_scores`.
 - Add `status` enum on assessments, per-skill score status, snapshotted skill list.
 - **Exit:** Schema exists, FK constraints verified.
 
 ### Phase 5 — LLM client + question generation (1 day)
 - `llm/` wrapper (retries, timeout, Zod-validated structured output).
 - `questions/generateQuestion`.
-- Wizard "Generate" creates `assessments` row in `GENERATED` status with `question_text`.
+- Wizard "Generate" server action creates `assessments` row in `GENERATED` status with `question_text`; if an active assessment already exists, redirect to it instead of creating a duplicate.
 - **Exit:** Generate produces a real question stored in DB and visible on screen.
 
 ### Phase 6 — Response submission (½ day)
@@ -152,7 +152,7 @@ Each phase is independently shippable and verifiable. Don't start phase N+1 unti
 
 | # | Decision | Status |
 |---|---|---|
-| 1 | Tech stack (Next.js + Supabase Postgres + Drizzle + Auth.js + Anthropic) | ✅ Locked |
+| 1 | Tech stack (Next.js + Supabase Postgres + Drizzle + Auth.js + OpenAI) | ✅ Locked |
 | 2 | `rubric_id` (FK) over `rubric_version` | ✅ Resolved — see ER doc §3, scoring logic §5 |
 | 3 | Snapshot evaluated skills via `assessment_skills` | ✅ Resolved — see ER doc §3 |
 | 4 | `assessments.status` enum: DRAFT, GENERATED, SUBMITTED, EVALUATING, COMPLETED, FAILED, ABANDONED | ✅ Resolved — see ER doc §3 |
@@ -169,3 +169,14 @@ All decisions resolved. Cleared to start Phase 0.
 - _2026-04-28_: Initial draft.
 - _2026-04-28_: Resolutions baked into source docs (ER, scoring logic, UX, product brief). Items 2–7 in §6 marked resolved.
 - _2026-04-28_: Tech stack locked — Next.js + Supabase Postgres + Drizzle + Auth.js + Anthropic. Supabase scope limited to Postgres only.
+- _2026-04-29_: Phases 0–3 shipped — repo scaffolded with Next.js/App Router + Tailwind + Drizzle, taxonomy seeded from `skill_assessment_taxonomy.md`, Google sign-in wired through Auth.js, and the `/assessment/new` server-rendered cascading wizard implemented.
+- _2026-04-29_: LLM provider swapped Anthropic → OpenAI. `lib/server/llm/client.ts` rewritten to use the OpenAI SDK with structured outputs (`response_format: { type: "json_schema", strict: true }`) instead of Claude's `tool_use`. Env vars hard-cut: `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` → `OPENAI_API_KEY`/`OPENAI_MODEL`. Default model `gpt-4o`. `@anthropic-ai/sdk` removed; `openai` added. The `callStructured` public contract is unchanged — `questions/generate.ts` and downstream callers were not touched beyond comment cleanup. Per build_plan §4 the swap was a single-file rewrite as designed.
+- _2026-04-29_: Phase 4 schema added — `assessments`, `assessment_skills`, `responses`, `response_skill_scores` tables, plus `assessment_status` and `response_skill_score_status` enums. CHECK constraint enforces `score` ∈ [0, 5]. ER doc §3 / §5 mirrored verbatim (FK indexes, status indexes, composite `(skill_id, response_id)`, `responses.assessment_id` UNIQUE).
+- _2026-04-29_: Phase 5 shipped — `lib/server/llm/` (provider-agnostic structured-output client with timeouts, retries, and Zod validation), `lib/server/questions/` (`generateQuestion`), `lib/server/assessments/` orchestrator (active-assessment lookup + transactional create that snapshots `assessment_skills`). Wizard's Generate is now a server action that creates a row in `GENERATED` and redirects to `/assessment/[id]`, which renders the question + breadcrumb + skill chips. `OPENAI_MODEL` is available as an optional env override. Active-assessment policy from UX §4 enforced by redirecting to the in-flight row instead of creating a duplicate.
+- _2026-04-29_: OpenAI smoke-tested successfully against the real app environment: Supabase connectivity, `OPENAI_API_KEY`, `OPENAI_MODEL`, and strict JSON-schema structured outputs all verified end-to-end before manual UI validation.
+- _2026-04-29_: Phase 6 shipped — `/assessment/[id]` now renders a real response submission experience instead of the placeholder. Added a client-side gated textarea (minimum 50 characters), a server action for submission, and a transactional `submitAssessmentResponse` service that trims/validates input, writes `responses` durably, and transitions the parent `assessments` row to `EVALUATING`. Read-side assessment loading now includes the saved response so in-flight or already-submitted assessments can render the persisted answer.
+- _2026-04-29_: Phase 7 shipped — added `lib/server/rubrics/` with a structured-output rubric generator and cache-backed `getOrCreateRubric` service over `skill_rubrics`. The service is cache-first, validates rubric JSON with Zod, persists version `1` on first creation, and coalesces concurrent requests for the same `skill_id` within the app process so repeated calls reuse the same LLM generation instead of duplicating it.
+- _2026-04-29_: Phase 8 shipped — added `lib/server/evaluator/` plus an assessment evaluation orchestrator that fans out one LLM call per snapshotted skill, persists each `response_skill_scores` row independently, and finalizes the parent assessment to `COMPLETED` with `overall_score` or `FAILED` when any skill row fails. Submission now creates `PENDING` skill-score rows transactionally before evaluation begins, and a retry path exists to rerun only failed skills.
+- _2026-04-29_: Phase 9 shipped — added `/assessment/[id]/results` with an overall score card, per-skill progress bars, and expandable evaluator justifications. The assessment read layer now exposes per-skill scoring results for the owner, successful submissions redirect straight to the results view, and the assessment detail page links into the results screen for in-flight or completed runs.
+- _2026-04-29_: Phase 10 shipped — edge-state handling now covers the UX doc's §9 flows: generation creates a real `DRAFT` assessment first so failed question generation lands on a persisted `FAILED` row with same-row retry; unfinished generated assessments can be discarded into `ABANDONED` and restarted; failed per-skill evaluations can be retried from the results page without re-running successful scores; the wizard/detail/results pages now show explicit loading/error/retry states; and lightweight in-memory per-user rate limiting plus structured server logging were added around generation, submission, and retry actions.
+- _2026-04-29_: Phase 11 shipped — test infrastructure and the test set the build plan called for. Added vitest + a pglite-backed in-memory Postgres helper (`src/test/test-db.ts`) so DB-touching tests run real migrations against a real Postgres engine without external services. Unit tests cover the evaluator (prompt shape, structured-output forwarding, error propagation), the rubric service (cache hit, cache miss, in-process coalescing of concurrent calls, per-skill cache isolation), and the taxonomy read queries (per-level filtering, alphabetical ordering, the four-level outcome-context join). Schema tests boot pglite, apply every migration in order, verify the journal matches the files on disk, and assert the live constraints (CHECK on `response_skill_scores.score`, unique on `responses.assessment_id`, all expected tables and enum labels). One end-to-end test drives `createAssessmentFromOutcome → submitAssessmentResponse → runAssessmentEvaluation → getAssessmentResultsForUser` against the same in-process Postgres with `callStructured` mocked, confirming the orchestrator lands a real assessment in COMPLETED with a sane `overall_score`. New scripts: `pnpm test` / `pnpm test:watch`. 27 tests across 8 files; full suite under 5s.

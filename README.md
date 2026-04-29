@@ -7,7 +7,7 @@ answer one scenario question, get LLM-scored per-skill results.
 
 ```
 .
-├── app/        # Next.js app (TypeScript, Tailwind, Drizzle, Auth.js, Anthropic SDK)
+├── app/        # Next.js app (TypeScript, Tailwind, Drizzle, Auth.js, OpenAI SDK)
 ├── docs/       # Product brief, taxonomy, ER diagram, scoring logic, build plan
 └── .github/    # CI workflows
 ```
@@ -39,21 +39,21 @@ pnpm db:push                     # phase 0: a no-op (schema is empty); phase 1 a
 | DB       | Supabase Postgres                                   |
 | ORM      | Drizzle                                             |
 | Auth     | Auth.js (NextAuth) with Google provider             |
-| LLM      | Anthropic Claude (Sonnet)                           |
+| LLM      | OpenAI (gpt-4o via structured outputs)              |
 | Validation | Zod                                               |
 | Hosting  | Vercel (app) + Supabase (DB)                        |
 
 ## Phase status
 
 - [x] **Phase 0** — Foundations
-- [ ] Phase 1 — Data layer & seed
-- [ ] Phase 2 — Auth
-- [ ] Phase 3 — Cascading selection wizard
-- [ ] Phase 4 — User layer schema
-- [ ] Phase 5 — LLM client + question generation
-- [ ] Phase 6 — Response submission
-- [ ] Phase 7 — Rubric service
-- [ ] Phase 8 — Evaluator + orchestrator
-- [ ] Phase 9 — Results UI
-- [ ] Phase 10 — Edge & polish
+- [x] Phase 1 — Data layer & seed
+- [x] Phase 2 — Auth
+- [x] Phase 3 — Cascading selection wizard
+- [x] Phase 4 — User layer schema
+- [x] Phase 5 — LLM client + question generation
+- [x] Phase 6 — Response submission
+- [x] Phase 7 — Rubric service
+- [x] Phase 8 — Evaluator + orchestrator
+- [x] Phase 9 — Results UI
+- [x] Phase 10 — Edge & polish
 - [ ] Phase 11 — Tests

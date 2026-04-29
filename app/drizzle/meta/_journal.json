@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1777390783218,
+      "tag": "0000_fantastic_ikaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777391457148,
+      "tag": "0001_secret_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777439293101,
+      "tag": "0002_daffy_young_avengers",
+      "breakpoints": true
+    }
+  ]
+}
